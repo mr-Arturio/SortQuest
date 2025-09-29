@@ -39,6 +39,12 @@ export default function RootLayout({
               </Link>
               <nav className="hidden sm:flex gap-3 text-sm">
                 <Link
+                  href="/dashboard"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Dashboard
+                </Link>
+                <Link
                   href="/scan"
                   className="text-neutral-700 hover:text-emerald-700"
                 >
@@ -62,6 +68,18 @@ export default function RootLayout({
                 >
                   Achievements
                 </Link>
+                <Link
+                  href="/store"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Store
+                </Link>
+                <Link
+                  href="/settings"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Settings
+                </Link>
               </nav>
             </div>
           </header>
@@ -70,16 +88,16 @@ export default function RootLayout({
 
           <nav className="fixed bottom-4 left-0 right-0 mx-auto mb-4 w-[92%] max-w-md rounded-2xl bg-white/90 shadow backdrop-blur px-3 py-2 grid grid-cols-4 border border-neutral-200 sm:hidden">
             <Link
+              href="/dashboard"
+              className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
+            >
+              Home
+            </Link>
+            <Link
               href="/scan"
               className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
             >
               Scan
-            </Link>
-            <Link
-              href="/team"
-              className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
-            >
-              Team
             </Link>
             <Link
               href="/leaderboard"
@@ -88,10 +106,10 @@ export default function RootLayout({
               Rank
             </Link>
             <Link
-              href="/achievements"
+              href="/store"
               className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
             >
-              Awards
+              Store
             </Link>
           </nav>
         </div>
