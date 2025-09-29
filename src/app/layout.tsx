@@ -10,7 +10,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Decomp Dash",
+  title: "SortQuest",
   description: "Scan → classify → save centuries",
   manifest: "/manifest.webmanifest",
 };
@@ -34,7 +34,7 @@ export default function RootLayout({
                   ♻️
                 </div>
                 <h1 className="text-lg font-semibold text-neutral-900">
-                  Decomp Dash
+                  SortQuest
                 </h1>
               </Link>
               <nav className="hidden sm:flex gap-3 text-sm">

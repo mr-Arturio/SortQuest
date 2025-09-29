@@ -139,6 +139,21 @@ All colors MUST be HSL.
   }
 }
 
+@layer utilities {
+  .bg-eco-gradient {
+    background: var(--eco-gradient);
+  }
+  .bg-eco-gradient-light {
+    background: var(--eco-gradient-light);
+  }
+  .shadow-eco {
+    box-shadow: var(--shadow-eco);
+  }
+  .shadow-card-eco {
+    box-shadow: var(--shadow-card);
+  }
+}
+
 @layer components {
   .btn {
     @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition;
