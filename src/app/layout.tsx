@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Link from "next/link";
+import Image from "next/image";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,9 +31,14 @@ export default function RootLayout({
           <header className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-b from-white/80 to-white/40 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
             <div className="mx-auto max-w-md sm:max-w-2xl px-4 py-3 flex items-center justify-between">
               <Link href="/" className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-600 text-white grid place-items-center shadow">
-                  ♻️
-                </div>
+                <Image
+                  src="/SortQuest_Logo.png"
+                  alt="SortQuest logo"
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-xl object-contain"
+                  priority
+                />
                 <h1 className="text-lg font-semibold text-neutral-900">
                   SortQuest
                 </h1>
