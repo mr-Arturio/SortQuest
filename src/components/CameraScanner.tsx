@@ -34,6 +34,9 @@ type VendorTrackConstraintSet = MediaTrackConstraintSet & {
   pointsOfInterest?: { x: number; y: number }[];
 };
 
+// Exclude people/pets from detection/UX and capture flow
+const BLOCKED_CLASSES = new Set(["person", "dog", "cat"]);
+
 // DEMO FLAG: when true, QR code is not required
 const DEMO_NO_QR = process.env.NEXT_PUBLIC_DEMO_NO_QR === "1";
 
@@ -353,7 +356,10 @@ export default function CameraScanner() {
               const sorted = (dets as unknown as MiniDet[]).sort(
                 (a, b) => (b.score || 0) - (a.score || 0)
               );
-              const best = sorted[0];
+              const filtered = sorted.filter(
+                (d) => !BLOCKED_CLASSES.has(d.class)
+              );
+              const best = filtered[0];
               const minArea = w * h * 0.06;
               const area = best ? best.bbox[2] * best.bbox[3] : 0;
 
@@ -447,6 +453,22 @@ export default function CameraScanner() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Quick safety prefilter: skip if a person/pet is present in the frame
+      try {
+        const model = await getCoco();
+        const preDets = (await model.detect(
+          canvas as HTMLCanvasElement
+        )) as Array<{ class: string; score?: number }>;
+        const hasBlocked = preDets.some(
+          (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
+        );
+        if (hasBlocked) {
+          alert("Please avoid capturing people or pets.");
+          return;
+        }
+      } catch {}
+
       const ahash = aHashFromImageData(img);
 
       // Duplicate check (Hamming < 5) per bin
@@ -475,16 +497,24 @@ export default function CameraScanner() {
       const mobPreds = await classify(roi);
 
       // Merge labels (detector first + synonyms, then MobileNet, then PAPER hint)
-      const labels = mergeLabels(detections, mobPreds);
+      const safeDetections = (detections || []).filter(
+        (d: any) =>
+          d && typeof d.class === "string" && !BLOCKED_CLASSES.has(d.class)
+      );
+      const labels = mergeLabels(safeDetections, mobPreds);
 
       // choose a user-facing label
+      const main =
+        primary && !BLOCKED_CLASSES.has((primary as any).class)
+          ? primary
+          : null;
       const predictedLabel =
-        (primary?.class && primary.score > 0.55
-          ? primary.class
+        (main?.class && main.score > 0.55
+          ? (main as any).class
           : mobPreds[0]?.className) || "unknown";
       const confidence =
-        (primary?.class && primary.score > 0.55
-          ? primary.score
+        (main?.class && (main as any).score > 0.55
+          ? (main as any).score
           : mobPreds[0]?.probability) ?? 0.5;
 
       // Map via API (with fallback inside)
