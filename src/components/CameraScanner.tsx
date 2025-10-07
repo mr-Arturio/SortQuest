@@ -95,6 +95,12 @@ export default function CameraScanner() {
   const motionDeltaRef = useRef<number>(0);
   const detectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCaptureAtRef = useRef<number>(0);
+  const stableFramesRef = useRef<number>(0);
+  const busyRef = useRef<boolean>(false);
+  const sessionTokenRef = useRef<string | null>(null);
+  const sessionExpRef = useRef<number>(0);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Per-bin recent hashes + hourly cap
   const recentByBinRef = useRef<
@@ -179,8 +185,11 @@ export default function CameraScanner() {
   useEffect(() => {
     const onVis = () => {
       if (document.hidden) stopSession();
+      else startSession();
     };
     document.addEventListener("visibilitychange", onVis);
+    // auto-start on mount
+    startSession();
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       stopSession();
@@ -331,6 +340,47 @@ export default function CameraScanner() {
               localStorage.setItem("dd:lastTeamId", tag.teamId);
               localStorage.setItem("dd:lastBinId", tag.binId);
               lastQRSeenAtRef.current = now;
+              // Verify QR -> obtain short-lived session token (5m)
+              (async () => {
+                try {
+                  let coords: { lat?: number; lng?: number } = {};
+                  try {
+                    const geoloc = await new Promise<{
+                      lat: number;
+                      lng: number;
+                    }>((res, rej) =>
+                      navigator.geolocation.getCurrentPosition(
+                        (p) =>
+                          res({
+                            lat: p.coords.latitude,
+                            lng: p.coords.longitude,
+                          }),
+                        () =>
+                          res({
+                            lat: undefined as unknown as number,
+                            lng: undefined as unknown as number,
+                          }),
+                        { enableHighAccuracy: true, timeout: 4000 }
+                      )
+                    );
+                    coords = geoloc || {};
+                  } catch {}
+                  const r = await fetch("/api/bintag/verify", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ payload: qr.data, ...coords }),
+                  });
+                  if (r.ok) {
+                    const data = (await r.json()) as {
+                      token: string;
+                      expiresAt: string;
+                    };
+                    sessionTokenRef.current = data.token;
+                    sessionExpRef.current = Date.parse(data.expiresAt);
+                    setSessionToken(data.token);
+                  }
+                } catch {}
+              })();
             }
           } else {
             if (now - lastQRSeenAtRef.current > 1500) setBinTag(null);
@@ -383,10 +433,33 @@ export default function CameraScanner() {
             }
           })();
         }
+
+        // Auto-capture gating (motion stable + QR present + throttle)
+        const m = motionDeltaRef.current || 0;
+        if (m < 0.08) {
+          stableFramesRef.current = Math.min(10, stableFramesRef.current + 1);
+        } else {
+          stableFramesRef.current = 0;
+        }
+        const tokenOk =
+          DEMO_NO_QR ||
+          (!!sessionTokenRef.current &&
+            Date.now() < (sessionExpRef.current || 0));
+        const throttled = Date.now() - (lastCaptureAtRef.current || 0) > 1200;
+        if (
+          tokenOk &&
+          throttled &&
+          stableFramesRef.current >= 2 &&
+          !busyRef.current
+        ) {
+          lastCaptureAtRef.current = Date.now();
+          captureAndRecord({ silent: true }).catch(() => {});
+          stableFramesRef.current = 0;
+        }
       }, SCAN_INTERVAL_MS);
 
       if (sessionTimerRef.current) clearTimeout(sessionTimerRef.current);
-      sessionTimerRef.current = setTimeout(stopSession, 90_000);
+      sessionTimerRef.current = setTimeout(stopSession, 300_000);
     } catch (e: unknown) {
       stopSession();
       setErr(
@@ -397,7 +470,7 @@ export default function CameraScanner() {
     }
   }
 
-  async function captureAndRecord() {
+  async function captureAndRecord(opts?: { silent?: boolean }) {
     if (!videoRef.current || !captureCanvasRef.current) return;
     if (!sessionActive) return;
 
@@ -405,18 +478,22 @@ export default function CameraScanner() {
     const activeTag: BinTag | null = DEMO_NO_QR
       ? binTag ?? getDemoTag()
       : binTag;
-    if (!activeTag) {
-      alert("Show your BinTag QR to continue.");
+    const token = sessionTokenRef.current;
+    const tokenValid =
+      DEMO_NO_QR || (!!token && Date.now() < (sessionExpRef.current || 0));
+    if (!activeTag || !tokenValid) {
+      if (!opts?.silent) alert("Show your BinTag QR to continue.");
       return;
     }
 
     // Motion threshold (>= 2%)
     if ((motionDeltaRef.current || 0) < 0.02) {
-      alert("Move the camera or item a bit to proceed.");
+      if (!opts?.silent) alert("Move the camera or item a bit to proceed.");
       return;
     }
 
     setBusy(true);
+    busyRef.current = true;
     try {
       const video = videoRef.current;
       const canvas = captureCanvasRef.current;
@@ -464,7 +541,7 @@ export default function CameraScanner() {
           (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
         );
         if (hasBlocked) {
-          alert("Please avoid capturing people or pets.");
+          if (!opts?.silent) alert("Please avoid capturing people or pets.");
           return;
         }
       } catch {}
@@ -479,7 +556,8 @@ export default function CameraScanner() {
       };
       for (const h of entry.hashes) {
         if (hammingHex(h, ahash) < 5) {
-          alert("Looks like a duplicate capture—try a different angle.");
+          if (!opts?.silent)
+            alert("Looks like a duplicate capture—try a different angle.");
           return;
         }
       }
@@ -488,7 +566,7 @@ export default function CameraScanner() {
       const now = Date.now();
       entry.times = entry.times.filter((t) => now - t < 60 * 60 * 1000);
       if (entry.times.length >= 10) {
-        alert("Hourly capture limit reached for this bin.");
+        if (!opts?.silent) alert("Hourly capture limit reached for this bin.");
         return;
       }
 
@@ -526,10 +604,46 @@ export default function CameraScanner() {
       );
 
       const material = mapped.material;
-      const { bin, years, tip } = mapped;
+      const { bin: binHeuristic, years, tip: tipHeuristic } = mapped;
       const risk = Math.max(0, Math.min(1, mapped.risk_score ?? 0));
       const yearsRounded = Math.max(1, Math.round(years));
-      const points = Math.max(1, Math.round(yearsRounded * (1 - 0.5 * risk)));
+      const pointsHeuristic = Math.max(
+        1,
+        Math.round(yearsRounded * (1 - 0.5 * risk))
+      );
+
+      // --- Send to server recognize endpoint (Bedrock agent) ---
+      let decidedBin = binHeuristic;
+      let decidedTip = tipHeuristic;
+      let decidedPoints = pointsHeuristic;
+      try {
+        const blob: Blob = await new Promise((res) =>
+          canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
+        );
+        const fd = new FormData();
+        fd.append("token", token!);
+        fd.append("frame", blob, "frame.jpg");
+        const r = await fetch("/api/scan/recognize", {
+          method: "POST",
+          body: fd,
+        });
+        if (r.ok) {
+          const out = (await r.json()) as {
+            recyclable: boolean;
+            bin: string | null;
+            tip?: string;
+            points?: number;
+          };
+          if (out.bin) decidedBin = out.bin as any;
+          if (typeof out.points === "number") decidedPoints = out.points;
+          if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
+        } else if (r.status === 410) {
+          // session expired
+          sessionTokenRef.current = null;
+          sessionExpRef.current = 0;
+          setSessionToken(null);
+        }
+      } catch {}
 
       const uid = await ensureAnonAuth();
       await addDoc(collection(db, "scans"), {
@@ -540,10 +654,10 @@ export default function CameraScanner() {
         label: predictedLabel,
         material,
         confidence,
-        binSuggested: bin,
+        binSuggested: decidedBin,
         years: yearsRounded,
         ahash,
-        points,
+        points: decidedPoints,
         llmMode: mapped._mode || "heuristic",
         llmModel: mapped._model || "",
         risk_score: risk,
@@ -568,18 +682,19 @@ export default function CameraScanner() {
       setResult({
         label: predictedLabel,
         material,
-        bin,
+        bin: decidedBin,
         years: yearsRounded,
-        points,
+        points: decidedPoints,
         ahash,
         confidence,
-        tip,
+        tip: decidedTip,
         _mode: mapped._mode,
         _model: mapped._model,
         risk_score: risk,
       });
     } finally {
       setBusy(false);
+      busyRef.current = false;
     }
   }
 
@@ -670,8 +785,10 @@ export default function CameraScanner() {
             <span className="chip bg-white/90 text-neutral-800">
               {DEMO_NO_QR
                 ? "Demo mode: QR optional"
+                : sessionToken
+                ? "Session active"
                 : binTag
-                ? "BinTag detected"
+                ? "Verifying QR…"
                 : "Show your BinTag QR"}
             </span>
           </div>
@@ -684,30 +801,7 @@ export default function CameraScanner() {
         </div>
       )}
 
-      <div className="flex gap-2">
-        <button
-          onClick={startSession}
-          disabled={sessionActive}
-          className="btn-outline w-1/2"
-        >
-          {sessionActive ? "Session running…" : "Start 90s Session"}
-        </button>
-        <button
-          onClick={stopSession}
-          disabled={!sessionActive}
-          className="btn-outline w-1/2"
-        >
-          Stop
-        </button>
-      </div>
-
-      <button
-        disabled={captureDisabled}
-        onClick={captureAndRecord}
-        className="btn-primary w-full disabled:opacity-50"
-      >
-        {busy ? "Scanning…" : "Capture & Save"}
-      </button>
+      {/* Controls removed: session auto-starts; capture is motion/QR-gated */}
 
       {/* Unknown material banner */}
       {result?.material === "unknown" && (

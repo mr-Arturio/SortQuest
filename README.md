@@ -235,6 +235,7 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 - **Perceptual hash**: Near-duplicate frames in the same session are rejected (Hamming check).
 - **Rate limit**: Per-bin hourly cap.
 - **Risk score**: Suspicious scans (low motion, repeats, high volume, low confidence) get a **reduced score**.
+- **GeoLocation**
 
 ---
 
