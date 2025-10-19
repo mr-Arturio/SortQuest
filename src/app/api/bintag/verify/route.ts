@@ -1,37 +1,85 @@
 import { NextRequest } from "next/server";
-import { createSessionClaims, signSession } from "@/src/lib/session";
+import { signSessionJwt } from "@/lib/jwt";
+import { getFirestore } from "firebase-admin/firestore";
+import { getApp, initializeApp, applicationDefault } from "firebase-admin/app";
 
 export const runtime = "nodejs";
 
+function db() {
+  try {
+    return getFirestore(getApp());
+  } catch {
+    return getFirestore(initializeApp({ credential: applicationDefault() }));
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({} as any));
-    const payload: string = String(body.payload || "");
-    if (!payload.startsWith("BINTAG:")) {
-      return new Response("invalid payload", { status: 400 });
+    const { payload, lat, lng } = await req.json();
+
+    if (!payload || !payload.startsWith("BINTAG:")) {
+      return Response.json({ error: "Invalid QR payload" }, { status: 400 });
     }
+
     const parts = payload.split(":");
-    if (parts.length < 3) return new Response("bad tag", { status: 400 });
+    if (parts.length < 3) {
+      return Response.json({ error: "Invalid QR format" }, { status: 400 });
+    }
 
-    const teamId = parts[1];
-    const binId = parts[2];
-    const lat = typeof body.lat === "number" ? body.lat : undefined;
-    const lng = typeof body.lng === "number" ? body.lng : undefined;
+    const [, teamId, binId] = parts;
 
-    const claims = createSessionClaims({
-      teamId,
-      binId,
-      lat,
-      lng,
-      ttlMs: 5 * 60 * 1000,
+    // Verify bin exists and is active
+    const binRef = db().doc(`bins/${binId}`);
+    const binSnap = await binRef.get();
+
+    if (!binSnap.exists) {
+      return Response.json({ error: "Bin not found" }, { status: 404 });
+    }
+
+    const binData = binSnap.data()!;
+    if (binData.teamId !== teamId) {
+      return Response.json(
+        { error: "Bin not associated with team" },
+        { status: 403 }
+      );
+    }
+
+    // Create session
+    const sessionId = `sess_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const remainingAllowance = 10; // Max scans per session
+
+    await db()
+      .collection("sessions")
+      .doc(sessionId)
+      .set({
+        uid: "anonymous", // TODO: Use actual user ID when auth is implemented
+        teamId,
+        binId,
+        createdAt: new Date(),
+        expiresAt,
+        remainingAllowance,
+        scansCount: 0,
+        closed: false,
+        location: lat && lng ? { lat, lng } : null,
+      });
+
+    // Generate JWT token
+    const token = signSessionJwt({
+      uid: "anonymous",
+      sessionId,
+      expSec: 300, // 5 minutes
     });
-    const token = signSession(claims);
 
     return Response.json({
       token,
-      expiresAt: new Date(claims.exp).toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      remainingAllowance,
     });
-  } catch (e) {
-    return new Response("server error", { status: 500 });
+  } catch (error) {
+    console.error("BinTag verification error:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
