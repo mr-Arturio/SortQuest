@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import CameraScanner from "@/components/CameraScanner";
+import UserTotals from "@/components/UserTotals";
 
 export default function ScanPage() {
   const [ready, setReady] = useState(false);
@@ -30,5 +31,10 @@ export default function ScanPage() {
     );
   }
 
-  return <CameraScanner />;
+  return (
+    <div className="space-y-4">
+      <CameraScanner />
+      <UserTotals />
+    </div>
+  );
 }

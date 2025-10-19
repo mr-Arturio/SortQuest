@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Link from "next/link";
+import Image from "next/image";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -10,7 +11,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Decomp Dash",
+  title: "SortQuest",
   description: "Scan → classify → save centuries",
   manifest: "/manifest.webmanifest",
 };
@@ -30,14 +31,25 @@ export default function RootLayout({
           <header className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-b from-white/80 to-white/40 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
             <div className="mx-auto max-w-md sm:max-w-2xl px-4 py-3 flex items-center justify-between">
               <Link href="/" className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-600 text-white grid place-items-center shadow">
-                  ♻️
-                </div>
+                <Image
+                  src="/SortQuest_Logo.png"
+                  alt="SortQuest logo"
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-xl object-contain"
+                  priority
+                />
                 <h1 className="text-lg font-semibold text-neutral-900">
-                  Decomp Dash
+                  SortQuest
                 </h1>
               </Link>
               <nav className="hidden sm:flex gap-3 text-sm">
+                <Link
+                  href="/dashboard"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Dashboard
+                </Link>
                 <Link
                   href="/scan"
                   className="text-neutral-700 hover:text-emerald-700"
@@ -62,6 +74,18 @@ export default function RootLayout({
                 >
                   Achievements
                 </Link>
+                <Link
+                  href="/store"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Store
+                </Link>
+                <Link
+                  href="/settings"
+                  className="text-neutral-700 hover:text-emerald-700"
+                >
+                  Settings
+                </Link>
               </nav>
             </div>
           </header>
@@ -70,16 +94,16 @@ export default function RootLayout({
 
           <nav className="fixed bottom-4 left-0 right-0 mx-auto mb-4 w-[92%] max-w-md rounded-2xl bg-white/90 shadow backdrop-blur px-3 py-2 grid grid-cols-4 border border-neutral-200 sm:hidden">
             <Link
+              href="/dashboard"
+              className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
+            >
+              Home
+            </Link>
+            <Link
               href="/scan"
               className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
             >
               Scan
-            </Link>
-            <Link
-              href="/team"
-              className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
-            >
-              Team
             </Link>
             <Link
               href="/leaderboard"
@@ -88,10 +112,10 @@ export default function RootLayout({
               Rank
             </Link>
             <Link
-              href="/achievements"
+              href="/store"
               className="py-2 text-center text-sm text-neutral-700 hover:text-emerald-700"
             >
-              Awards
+              Store
             </Link>
           </nav>
         </div>
