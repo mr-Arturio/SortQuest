@@ -616,6 +616,8 @@ export default function CameraScanner() {
       let decidedBin = binHeuristic;
       let decidedTip = tipHeuristic;
       let decidedPoints = pointsHeuristic;
+      let serverSuccess = false;
+
       try {
         const blob: Blob = await new Promise((res) =>
           canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
@@ -627,23 +629,44 @@ export default function CameraScanner() {
           method: "POST",
           body: fd,
         });
+
+        if (r.status === 410) {
+          // session expired
+          sessionTokenRef.current = null;
+          sessionExpRef.current = 0;
+          setSessionToken(null);
+          if (!opts?.silent)
+            alert("Session expired. Please scan your QR again.");
+          return;
+        }
+
         if (r.ok) {
           const out = (await r.json()) as {
             recyclable: boolean;
             bin: string | null;
             tip?: string;
             points?: number;
+            confidence?: number;
           };
           if (out.bin) decidedBin = out.bin as any;
           if (typeof out.points === "number") decidedPoints = out.points;
           if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
-        } else if (r.status === 410) {
-          // session expired
-          sessionTokenRef.current = null;
-          sessionExpRef.current = 0;
-          setSessionToken(null);
+          serverSuccess = true;
+
+          // Visual feedback
+          if ("vibrate" in navigator) {
+            try {
+              (
+                navigator as Navigator & {
+                  vibrate?: (pattern: number | number[]) => boolean;
+                }
+              ).vibrate?.(out.recyclable ? 50 : [50, 50, 50]);
+            } catch {}
+          }
         }
-      } catch {}
+      } catch (error) {
+        console.error("Server recognition failed:", error);
+      }
 
       const uid = await ensureAnonAuth();
       await addDoc(collection(db, "scans"), {
@@ -653,14 +676,17 @@ export default function CameraScanner() {
         ts: serverTimestamp(),
         label: predictedLabel,
         material,
-        confidence,
+        confidence: serverSuccess ? confidence : confidence * 0.8, // Lower confidence for heuristic
         binSuggested: decidedBin,
         years: yearsRounded,
         ahash,
         points: decidedPoints,
-        llmMode: mapped._mode || "heuristic",
-        llmModel: mapped._model || "",
+        llmMode: serverSuccess ? "server" : mapped._mode || "heuristic",
+        llmModel: serverSuccess ? "bedrock-nova" : mapped._model || "",
         risk_score: risk,
+        recyclable: serverSuccess
+          ? decidedBin === "recycle" || decidedBin === "compost"
+          : decidedBin === "recycle" || decidedBin === "compost",
       });
 
       // Update recent trackers
@@ -669,15 +695,7 @@ export default function CameraScanner() {
       entry.times.push(now);
       recentByBinRef.current.set(key, entry);
 
-      if ("vibrate" in navigator) {
-        try {
-          (
-            navigator as Navigator & {
-              vibrate?: (pattern: number | number[]) => boolean;
-            }
-          ).vibrate?.(50);
-        } catch {}
-      }
+      // Vibration feedback moved to server response section above
 
       setResult({
         label: predictedLabel,

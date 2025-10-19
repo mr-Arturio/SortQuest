@@ -1,0 +1,38 @@
+{
+  "plastic": {
+    "recycle": "Rinse containers; remove food residue.",
+    "landfill": "Not recyclable here. Try to reduce single-use plastics."
+  },
+  "metal": {
+    "recycle": "Crush cans if possible to save space.",
+    "landfill": "Check if your area accepts metal recycling."
+  },
+  "glass": {
+    "recycle": "Remove caps; labels are OK. Glass is endlessly recyclable.",
+    "landfill": "Glass doesn't decompose. Look for glass recycling programs."
+  },
+  "paper": {
+    "recycle": "Flatten boxes; avoid greasy paper.",
+    "landfill": "Paper decomposes quickly but recycling saves trees."
+  },
+  "cardboard": {
+    "recycle": "Flatten boxes and remove tape when possible.",
+    "landfill": "Cardboard breaks down quickly but recycling is better."
+  },
+  "organic": {
+    "compost": "Great for organics—use a liner if allowed locally.",
+    "landfill": "Consider composting if your area doesn't accept organic waste."
+  },
+  "ewaste": {
+    "special": "Take electronics to an e-waste drop-off—hazardous if trashed.",
+    "landfill": "Never put electronics in landfill. Find an e-waste facility."
+  },
+  "hazard": {
+    "special": "Use a hazardous waste depot for proper disposal.",
+    "landfill": "Hazardous materials need special disposal. Never put in regular trash."
+  },
+  "unknown": {
+    "landfill": "When in doubt, use the general bin or check local rules.",
+    "recycle": "Not sure if recyclable. Check local guidelines."
+  }
+}
