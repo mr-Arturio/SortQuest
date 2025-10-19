@@ -1,4 +1,5 @@
 Created for Ottawa 1-day AI Hackathon
+
 # SortQuest♻️
 
 _Gamified recycling with streaks, badges, and leaderboards._
@@ -36,6 +37,7 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
   Only a perceptual hash & label are stored—**no photos**.
 
 ---
+
 ![Landing page](./public/landing.png)
 ![Leaderboard page](./public/leaderboard.png)
 ![Achievements page](./public/achievements.png)
@@ -48,7 +50,7 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
 - **Database**: Firebase **Firestore**
 - **On-device vision**: `@tensorflow-models/mobilenet` (TFJS)
 - **QR**: `jsQR`
-- **AI Mapping**: OpenAI **gpt-4o-mini** via `/api/map` (JSON mode w/ guardrails)
+- **AI Recognition**: AWS Bedrock **Nova Lite** for advanced computer vision
 - **PWA**: Installable, mobile-first layout
 
 ---
@@ -99,7 +101,7 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
 - **Node**: 18+ (20 recommended)
 - **npm**: 9+
 - A **Firebase** project with Firestore enabled
-- An **OpenAI** API key (optional; app still works with the fallback rules engine)
+- An **AWS Bedrock** API key for advanced AI recognition
 
 ### 1) Clone & Install
 
@@ -150,16 +152,18 @@ module.exports = {
 
 4. Firestore security for hackathon/demo: start with **test rules** or simple allow rules, then harden later.
 
-### 4) OpenAI (optional but recommended)
+### 4) AWS Bedrock Configuration
 
 Create `.env.local` at project root:
 
 ```ini
-OPENAI_API_KEY=sk-...     # required to enable LLM mapping
-MAP_MODEL=gpt-4o-mini     # default model used by /api/map
+AWS_BEARER_TOKEN_BEDROCK=your_bedrock_token  # required for AI recognition
+AWS_REGION=us-east-1                         # AWS region
+BEDROCK_VISION_MODEL_ID=amazon.nova-lite-v1:0  # vision model
 ```
 
-- If omitted, the app **falls back** to a deterministic heuristic mapper and still runs.
+- The app uses **AWS Bedrock Nova** for advanced computer vision recognition.
+- Falls back to client-side heuristics if Bedrock is unavailable.
 
 ### 5) Icons (PWA)
 
@@ -193,8 +197,8 @@ $body = @{
 } | ConvertTo-Json -Depth 5
 
 $r = Invoke-WebRequest -Uri "http://localhost:3000/api/map" -Method POST -ContentType "application/json" -Body $body
-$r.Headers["x-map-mode"]     # "llm" if using OpenAI, else "heuristic"
-$r.Headers["x-map-model"]    # "gpt-4o-mini" (if llm)
+$r.Headers["x-map-mode"]     # "server" if using Bedrock, else "heuristic"
+$r.Headers["x-map-model"]    # "bedrock-nova" (if server)
 $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 ```
 
@@ -259,14 +263,17 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 - **Carbon Extensions**: Estimate emissions avoided; partner with drop-off centers or MRFs for verified scans.
 
 ---
-## Taglines 
+
+## Taglines
+
 - Quest. Sort. Score.
 - Make every toss count.
 - Sorting, gamified.
 - Small scans. Big wins.
--  From trash to triumph.
+- From trash to triumph.
 
 ## Feature naming
+
 - EcoScan™ — camera scan + guidance
 - BinTag™ — team/bin QR code
 - Years Saved — environmental impact metric
@@ -282,8 +289,8 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
   Ensure Tailwind **v3** and the standard `postcss.config.js` (see above).
 - **Camera not working**
   Use Chrome/Edge/Safari; allow camera permissions; close other apps using the camera.
-- **LLM path not used**
-  Check `.env.local`, restart `npm run dev`, confirm `npm i openai` installed, and inspect the `x-map-mode` header.
+- **Bedrock recognition not working**
+  Check `.env.local`, restart `npm run dev`, confirm AWS credentials are set, and test `/api/bedrock-ping`.
 - **Performance**
   Lighting matters. Keep item and QR in frame; avoid glare; move slightly to pass the motion check.
 

@@ -84,7 +84,7 @@ export default function CameraScanner() {
     ahash: string;
     confidence: number;
     tip: string;
-    _mode?: "llm" | "heuristic";
+    _mode?: "heuristic" | "server";
     _model?: string;
     risk_score?: number;
   }>(null);
@@ -836,8 +836,10 @@ export default function CameraScanner() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-neutral-500">Prediction</div>
             <div className="flex gap-2">
-              {result._mode === "llm" ? (
-                <span className="chip">AI: {result._model || "LLM"}</span>
+              {result._mode === "server" ? (
+                <span className="chip">
+                  AI: {result._model || "Bedrock Nova"}
+                </span>
               ) : (
                 <span className="chip bg-amber-100 text-amber-700">
                   Offline rules

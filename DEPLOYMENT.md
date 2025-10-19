@@ -29,13 +29,6 @@ BEDROCK_VISION_MODEL_ID=amazon.nova-lite-v1:0
 AWS_BEARER_TOKEN_BEDROCK=your_bedrock_bearer_token
 ```
 
-### OpenAI Configuration (Optional)
-
-```
-OPENAI_API_KEY=your_openai_api_key
-MAP_MODEL=gpt-4o-mini
-```
-
 ### Demo Mode (Optional)
 
 ```

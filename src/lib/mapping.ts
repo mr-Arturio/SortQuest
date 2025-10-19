@@ -8,7 +8,7 @@ export type MapResult = {
   tip: string;
   years: number;
   risk_score?: number;
-  _mode?: "llm" | "heuristic";
+  _mode?: "heuristic" | "server";
   _model?: string;
 };
 
@@ -18,44 +18,27 @@ export async function mapWithApi(
   delta: number,
   conf: number
 ): Promise<MapResult> {
-  try {
-    const r = await fetch("/api/map", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        labels: labels.map((p) => ({ name: p.className, prob: p.probability })),
-        rules: MATERIALS,
-        meta: { recentCount, delta, conf },
-      }),
-    });
-
-    if (r.ok) {
-      const data = (await r.json()) as MapResult;
-
-      const modeHeader = r.headers.get("x-map-mode");
-      const parsedMode: MapResult["_mode"] =
-        modeHeader === "llm" ? "llm" : "heuristic";
-
-      const modelHeader = r.headers.get("x-map-model") ?? "";
-
-      // Return a fully typed object without `any`
-      return { ...data, _mode: parsedMode, _model: modelHeader };
-    }
-  } catch {
-    // ignore network/parse errors -> fallback below
-  }
-
-  // Fallback (client-side heuristic)
+  // Client-side heuristic only (server-side Bedrock handles the main recognition)
   const top = labels[0]?.className || "";
   const material = labelToMaterial(top);
   const { bin, years, tip } = scoreFor(material);
+
+  // Calculate risk score based on confidence and recent activity
+  let risk_score = 0;
+  if (conf < 0.5) risk_score += 0.35;
+  if (conf < 0.3) risk_score += 0.55;
+  if (delta < 0.02) risk_score += 0.25;
+  if (recentCount >= 3) risk_score += 0.15;
+  if (recentCount >= 6) risk_score += 0.3;
+  risk_score = Math.min(1, Math.max(0, risk_score));
 
   return {
     material,
     bin: bin as MapResult["bin"],
     tip,
     years,
+    risk_score,
     _mode: "heuristic",
-    _model: "",
+    _model: "client-side",
   };
 }
