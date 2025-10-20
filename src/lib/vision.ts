@@ -110,23 +110,24 @@ export async function detectPrimaryROI(src: HTMLCanvasElement): Promise<{
   }));
 
   const scored = dets
-    .filter((d) => (d.bbox[2] * d.bbox[3]) / (W * H) >= 0.06)
+    .filter((d) => (d.bbox[2] * d.bbox[3]) / (W * H) >= 0.05)
     .map((d) => {
       const cw = centerWeight(d.bbox, W, H);
       const sw = sizeWeight(d.bbox, W, H);
+      // bias a bit more to center
       const pBoost = PRIORITY_CLASSES.has(d.class) ? 0.35 : 0;
-      const score = d.score * (1 + 1.2 * cw + 0.6 * sw) + pBoost;
+      const score = d.score * (1 + 1.45 * cw + 0.55 * sw) + pBoost;
       return { d, score };
     })
     .sort((a, b) => b.score - a.score);
 
   const best = scored[0]?.d;
 
-  // Fallback: center crop if no strong detection
+  // Fallback: center crop if no strong detection (tighter to center)
   if (!best) {
     const out = document.createElement("canvas");
-    const cw = Math.round(W * 0.6);
-    const ch = Math.round(H * 0.6);
+    const cw = Math.round(W * 0.5);
+    const ch = Math.round(H * 0.5);
     const sx = Math.round((W - cw) / 2);
     const sy = Math.round((H - ch) / 2);
     out.width = 320;

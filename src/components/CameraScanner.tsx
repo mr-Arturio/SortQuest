@@ -39,6 +39,9 @@ const BLOCKED_CLASSES = new Set(["person", "dog", "cat"]);
 
 // DEMO FLAG: when true, QR code is not required
 const DEMO_NO_QR = process.env.NEXT_PUBLIC_DEMO_NO_QR === "1";
+// TEST MODE: manual capture via button; QR is not required
+const TEST_MODE = process.env.NEXT_PUBLIC_TEST_MODE === "1";
+const ALLOW_NO_QR = TEST_MODE || DEMO_NO_QR;
 
 // loop settings
 const SCAN_INTERVAL_MS = 333; // ~3 fps
@@ -199,7 +202,7 @@ export default function CameraScanner() {
   function stopSession() {
     setSessionActive(false);
     setBox(null);
-    if (!DEMO_NO_QR) setBinTag(null);
+    if (!ALLOW_NO_QR) setBinTag(null);
     if (detectTimerRef.current) {
       clearInterval(detectTimerRef.current);
       detectTimerRef.current = null;
@@ -212,7 +215,12 @@ export default function CameraScanner() {
     const stream = (v?.srcObject as MediaStream | null) || null;
     // optional: detach listeners if needed; kept lightweight for demo
     if (stream) stream.getTracks().forEach((t) => t.stop());
-    if (v) v.srcObject = null;
+    if (v) {
+      try {
+        v.pause();
+      } catch {}
+      v.srcObject = null;
+    }
   }
 
   function getDemoTag(): BinTag {
@@ -243,7 +251,25 @@ export default function CameraScanner() {
       const v = videoRef.current;
       if (!v) return;
       v.srcObject = stream;
-      await v.play();
+      // Wait for metadata before attempting to play to avoid
+      // "play() request was interrupted by a new load request" errors
+      if (v.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          const onLoaded = () => {
+            v.removeEventListener("loadedmetadata", onLoaded);
+            resolve();
+          };
+          v.addEventListener("loadedmetadata", onLoaded, { once: true } as any);
+        });
+      }
+      try {
+        await v.play();
+      } catch {
+        // Swallow autoplay race conditions and retry once
+        try {
+          await v.play();
+        } catch {}
+      }
 
       // Enable autofocus/zoom controls where supported
       await enableTrackControls(stream);
@@ -288,7 +314,7 @@ export default function CameraScanner() {
       // warm up models
       // Models are loaded lazily by vision utils when called
 
-      if (DEMO_NO_QR) setBinTag(getDemoTag());
+      if (ALLOW_NO_QR) setBinTag(getDemoTag());
 
       // motion (+ optional QR) loop
       if (detectTimerRef.current) clearInterval(detectTimerRef.current);
@@ -324,7 +350,7 @@ export default function CameraScanner() {
         }
         prevFrameRef.current = img;
 
-        if (!DEMO_NO_QR) {
+        if (!ALLOW_NO_QR) {
           // QR detect
           const qr = jsQR(img.data, w, h);
           const now = Date.now();
@@ -442,11 +468,13 @@ export default function CameraScanner() {
           stableFramesRef.current = 0;
         }
         const tokenOk =
-          DEMO_NO_QR ||
+          ALLOW_NO_QR ||
           (!!sessionTokenRef.current &&
             Date.now() < (sessionExpRef.current || 0));
         const throttled = Date.now() - (lastCaptureAtRef.current || 0) > 1200;
+        const manualOnly = TEST_MODE;
         if (
+          !manualOnly &&
           tokenOk &&
           throttled &&
           stableFramesRef.current >= 2 &&
@@ -474,15 +502,16 @@ export default function CameraScanner() {
     if (!videoRef.current || !captureCanvasRef.current) return;
     if (!sessionActive) return;
 
-    // Resolve tag (demo mode auto-fills if needed)
-    const activeTag: BinTag | null = DEMO_NO_QR
+    // Resolve tag (demo/test mode auto-fills if needed)
+    const activeTag: BinTag | null = ALLOW_NO_QR
       ? binTag ?? getDemoTag()
       : binTag;
     const token = sessionTokenRef.current;
     const tokenValid =
-      DEMO_NO_QR || (!!token && Date.now() < (sessionExpRef.current || 0));
+      ALLOW_NO_QR || (!!token && Date.now() < (sessionExpRef.current || 0));
     if (!activeTag || !tokenValid) {
-      if (!opts?.silent) alert("Show your BinTag QR to continue.");
+      if (!opts?.silent && !ALLOW_NO_QR)
+        alert("Show your BinTag QR to continue.");
       return;
     }
 
@@ -618,57 +647,63 @@ export default function CameraScanner() {
       let decidedPoints = pointsHeuristic;
       let serverSuccess = false;
 
-      try {
-        const blob: Blob = await new Promise((res) =>
-          canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
-        );
-        const fd = new FormData();
-        fd.append("token", token!);
-        fd.append("frame", blob, "frame.jpg");
-        const r = await fetch("/api/scan/recognize", {
-          method: "POST",
-          body: fd,
-        });
+      // Only call server if we actually have a valid session token
+      if (token && Date.now() < (sessionExpRef.current || 0)) {
+        try {
+          const blob: Blob = await new Promise((res) =>
+            canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
+          );
+          const fd = new FormData();
+          fd.append("token", token);
+          fd.append("frame", blob, "frame.jpg");
+          const r = await fetch("/api/scan/recognize", {
+            method: "POST",
+            body: fd,
+          });
 
-        if (r.status === 410) {
-          // session expired
-          sessionTokenRef.current = null;
-          sessionExpRef.current = 0;
-          setSessionToken(null);
-          if (!opts?.silent)
-            alert("Session expired. Please scan your QR again.");
-          return;
-        }
+          if (r.status === 410) {
+            // session expired
+            sessionTokenRef.current = null;
+            sessionExpRef.current = 0;
+            setSessionToken(null);
+            if (!opts?.silent && !ALLOW_NO_QR)
+              alert("Session expired. Please scan your QR again.");
+          } else if (r.ok) {
+            const out = (await r.json()) as {
+              recyclable: boolean;
+              bin: string | null;
+              tip?: string;
+              points?: number;
+              confidence?: number;
+            };
+            if (out.bin) decidedBin = out.bin as any;
+            if (typeof out.points === "number") decidedPoints = out.points;
+            if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
+            serverSuccess = true;
 
-        if (r.ok) {
-          const out = (await r.json()) as {
-            recyclable: boolean;
-            bin: string | null;
-            tip?: string;
-            points?: number;
-            confidence?: number;
-          };
-          if (out.bin) decidedBin = out.bin as any;
-          if (typeof out.points === "number") decidedPoints = out.points;
-          if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
-          serverSuccess = true;
-
-          // Visual feedback
-          if ("vibrate" in navigator) {
-            try {
-              (
-                navigator as Navigator & {
-                  vibrate?: (pattern: number | number[]) => boolean;
-                }
-              ).vibrate?.(out.recyclable ? 50 : [50, 50, 50]);
-            } catch {}
+            // Visual feedback
+            if ("vibrate" in navigator) {
+              try {
+                (
+                  navigator as Navigator & {
+                    vibrate?: (pattern: number | number[]) => boolean;
+                  }
+                ).vibrate?.(out.recyclable ? 50 : [50, 50, 50]);
+              } catch {}
+            }
           }
+        } catch (error) {
+          console.error("Server recognition failed:");
         }
-      } catch (error) {
-        console.error("Server recognition failed:", error);
       }
 
       const uid = await ensureAnonAuth();
+      const decidedBinStr = String(decidedBin);
+      const isRecyclable =
+        decidedBinStr === "recycle" ||
+        decidedBinStr === "recycling" ||
+        decidedBinStr === "compost";
+
       await addDoc(collection(db, "scans"), {
         userId: uid,
         teamId: activeTag.teamId,
@@ -684,9 +719,7 @@ export default function CameraScanner() {
         llmMode: serverSuccess ? "server" : mapped._mode || "heuristic",
         llmModel: serverSuccess ? "bedrock-nova" : mapped._model || "",
         risk_score: risk,
-        recyclable: serverSuccess
-          ? decidedBin === "recycle" || decidedBin === "compost"
-          : decidedBin === "recycle" || decidedBin === "compost",
+        recyclable: isRecyclable,
       });
 
       // Update recent trackers
@@ -716,7 +749,7 @@ export default function CameraScanner() {
     }
   }
 
-  const captureDisabled = !sessionActive || !!busy || (!DEMO_NO_QR && !binTag);
+  const captureDisabled = !sessionActive || !!busy || (!ALLOW_NO_QR && !binTag);
 
   return (
     <div className="space-y-3">
@@ -801,7 +834,9 @@ export default function CameraScanner() {
 
           <div className="absolute left-2 top-2">
             <span className="chip bg-white/90 text-neutral-800">
-              {DEMO_NO_QR
+              {TEST_MODE
+                ? "Test mode: tap Scan"
+                : DEMO_NO_QR
                 ? "Demo mode: QR optional"
                 : sessionToken
                 ? "Session active"
@@ -809,6 +844,21 @@ export default function CameraScanner() {
                 ? "Verifying QR…"
                 : "Show your BinTag QR"}
             </span>
+          </div>
+
+          {/* Center reticle */}
+          <div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            aria-hidden
+          >
+            <div
+              className="rounded-full border border-white/50"
+              style={{
+                width: 64,
+                height: 64,
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.3) inset",
+              }}
+            />
           </div>
         </div>
       </div>
@@ -819,7 +869,18 @@ export default function CameraScanner() {
         </div>
       )}
 
-      {/* Controls removed: session auto-starts; capture is motion/QR-gated */}
+      {/* Controls: In test mode we expose a manual Scan button */}
+      {TEST_MODE && (
+        <div className="flex justify-center">
+          <button
+            className="btn btn-primary"
+            disabled={captureDisabled}
+            onClick={() => captureAndRecord().catch(() => {})}
+          >
+            Start scanning
+          </button>
+        </div>
+      )}
 
       {/* Unknown material banner */}
       {result?.material === "unknown" && (
