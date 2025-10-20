@@ -668,6 +668,7 @@ export default function CameraScanner() {
             setSessionToken(null);
             if (!opts?.silent && !ALLOW_NO_QR)
               alert("Session expired. Please scan your QR again.");
+            return; // do not continue or record scan data
           } else if (r.ok) {
             const out = (await r.json()) as {
               recyclable: boolean;
@@ -693,7 +694,7 @@ export default function CameraScanner() {
             }
           }
         } catch (error) {
-          console.error("Server recognition failed:");
+          console.error("Server recognition failed:", error);
         }
       }
 
