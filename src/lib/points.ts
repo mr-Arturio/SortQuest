@@ -24,11 +24,33 @@ export async function awardPoints({
     const userRef = d.doc(`users/${uid}`);
     const sess = await tx.get(sessRef);
     if (!sess.exists) throw new Error("no_session");
-    const s = sess.data() as any;
+    const s = sess.data() as {
+      expiresAt:
+        | Date
+        | {
+            toDate?: () => Date;
+          }
+        | number;
+      closed?: boolean;
+      remainingAllowance?: number;
+      scansCount?: number;
+    };
     const now = Date.now();
-    const exp =
-      (s.expiresAt?.toDate?.() ?? new Date(s.expiresAt)).getTime?.() ??
-      s.expiresAt;
+    let exp: number;
+    const ex = s.expiresAt as unknown;
+    if (
+      ex &&
+      typeof ex === "object" &&
+      (ex as { toDate?: () => Date }).toDate
+    ) {
+      exp = (ex as { toDate: () => Date }).toDate().getTime();
+    } else if (ex instanceof Date) {
+      exp = ex.getTime();
+    } else if (typeof ex === "number") {
+      exp = ex;
+    } else {
+      exp = new Date(ex as Date).getTime();
+    }
     if (s.closed || now > exp || (s.remainingAllowance ?? 0) <= 0)
       throw new Error("expired_or_limit");
 

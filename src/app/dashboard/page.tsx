@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   collection,
   getDocs,
@@ -202,7 +202,7 @@ export default function Dashboard() {
           <Card className="shadow-card-eco border-eco-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Today's Scans
+                Today&apos;s Scans
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -267,7 +267,7 @@ export default function Dashboard() {
                 {fmt(userStats.totalPoints)}
               </div>
               <p className="text-xs text-muted-foreground">
-                For competitions & ranking
+                For competitions &amp; ranking
               </p>
             </CardContent>
           </Card>

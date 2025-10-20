@@ -12,7 +12,9 @@ export async function describeItemWithNova(
 ): Promise<NovaDescription | null> {
   try {
     if (!process.env.AWS_REGION) return null;
-    const mod: any = await import("@aws-sdk/client-bedrock-runtime");
+    const mod = (await import(
+      "@aws-sdk/client-bedrock-runtime"
+    )) as typeof import("@aws-sdk/client-bedrock-runtime");
     const client = new mod.BedrockRuntimeClient({
       region: process.env.AWS_REGION,
     });

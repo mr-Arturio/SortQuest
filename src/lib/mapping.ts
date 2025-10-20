@@ -1,4 +1,4 @@
-import { MATERIALS, labelToMaterial } from "./materials";
+import { labelToMaterial } from "./materials";
 import { scoreFor } from "./scoring";
 import type { Pred } from "./vision";
 

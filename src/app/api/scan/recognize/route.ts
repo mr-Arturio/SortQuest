@@ -99,7 +99,9 @@ Return STRICT JSON ONLY, no code fences, matching exactly:
   const resp = await r.json();
   const text =
     resp?.output_text ??
-    resp?.output?.message?.content?.find((p: any) => p?.text)?.text ??
+    resp?.output?.message?.content?.find(
+      (p: { text?: string }) => typeof p?.text === "string"
+    )?.text ??
     "";
 
   const parsed = parseNovaJson(text);
@@ -112,7 +114,7 @@ Return STRICT JSON ONLY, no code fences, matching exactly:
   let recyclable = !!parsed.recyclable && confidence >= 0.35; // small guard
   let bin: "recycle" | "trash" | "compost" | "ewaste" | "hazard" | "unknown" =
     parsed.binSuggested || "unknown";
-  let material = parsed.material || "unknown";
+  const material = parsed.material || "unknown";
 
   // ---- local rule override hook (stub now, data later) ----
   ({ recyclable, bin } = applyLocalRules({

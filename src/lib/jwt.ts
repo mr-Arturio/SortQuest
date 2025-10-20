@@ -17,5 +17,5 @@ export function verifySessionJwt(token: string): {
   uid: string;
   sessionId: string;
 } {
-  return jwt.verify(token, SECRET) as any;
+  return jwt.verify(token, SECRET) as { uid: string; sessionId: string };
 }

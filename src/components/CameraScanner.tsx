@@ -1,7 +1,7 @@
 "use client";
 
 import "@tensorflow/tfjs";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
@@ -14,6 +14,7 @@ import {
   mergeLabels,
   getCoco,
 } from "../lib/vision";
+import type { Detection } from "../lib/vision";
 import { mapWithApi, type MapResult } from "../lib/mapping";
 
 type BinTag = { teamId: string; binId: string };
@@ -104,6 +105,7 @@ export default function CameraScanner() {
   const sessionTokenRef = useRef<string | null>(null);
   const sessionExpRef = useRef<number>(0);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const captureFnRef = useRef<(opts?: { silent?: boolean }) => void>(() => {});
 
   // Per-bin recent hashes + hourly cap
   const recentByBinRef = useRef<
@@ -185,20 +187,6 @@ export default function CameraScanner() {
     } catch {}
   }
 
-  useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) stopSession();
-      else startSession();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    // auto-start on mount
-    startSession();
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      stopSession();
-    };
-  }, []);
-
   function stopSession() {
     setSessionActive(false);
     setBox(null);
@@ -229,7 +217,7 @@ export default function CameraScanner() {
     return { teamId: localTeam, binId: localBin };
   }
 
-  async function startSession() {
+  const startSession = useCallback(async function startSession() {
     setErr(null);
     setResult(null);
     setSessionActive(true);
@@ -259,7 +247,9 @@ export default function CameraScanner() {
             v.removeEventListener("loadedmetadata", onLoaded);
             resolve();
           };
-          v.addEventListener("loadedmetadata", onLoaded, { once: true } as any);
+          v.addEventListener("loadedmetadata", onLoaded, {
+            once: true,
+          } as AddEventListenerOptions);
         });
       }
       try {
@@ -374,7 +364,7 @@ export default function CameraScanner() {
                     const geoloc = await new Promise<{
                       lat: number;
                       lng: number;
-                    }>((res, rej) =>
+                    }>((res) =>
                       navigator.geolocation.getCurrentPosition(
                         (p) =>
                           res({
@@ -481,7 +471,12 @@ export default function CameraScanner() {
           !busyRef.current
         ) {
           lastCaptureAtRef.current = Date.now();
-          captureAndRecord({ silent: true }).catch(() => {});
+          // defer to next tick to avoid useCallback ordering on first mount
+          setTimeout(() => {
+            try {
+              captureFnRef.current({ silent: true });
+            } catch {}
+          }, 0);
           stableFramesRef.current = 0;
         }
       }, SCAN_INTERVAL_MS);
@@ -496,259 +491,283 @@ export default function CameraScanner() {
           : "Failed to access camera. Check site permissions."
       );
     }
-  }
+  }, []);
 
-  async function captureAndRecord(opts?: { silent?: boolean }) {
-    if (!videoRef.current || !captureCanvasRef.current) return;
-    if (!sessionActive) return;
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) stopSession();
+      else startSession();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    // auto-start on mount
+    startSession();
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      stopSession();
+    };
+  }, [startSession]);
 
-    // Resolve tag (demo/test mode auto-fills if needed)
-    const activeTag: BinTag | null = ALLOW_NO_QR
-      ? binTag ?? getDemoTag()
-      : binTag;
-    const token = sessionTokenRef.current;
-    const tokenValid =
-      ALLOW_NO_QR || (!!token && Date.now() < (sessionExpRef.current || 0));
-    if (!activeTag || !tokenValid) {
-      if (!opts?.silent && !ALLOW_NO_QR)
-        alert("Show your BinTag QR to continue.");
-      return;
-    }
+  const captureAndRecord = useCallback(
+    async function captureAndRecord(opts?: { silent?: boolean }) {
+      if (!videoRef.current || !captureCanvasRef.current) return;
+      if (!sessionActive) return;
 
-    // Motion threshold (>= 2%)
-    if ((motionDeltaRef.current || 0) < 0.02) {
-      if (!opts?.silent) alert("Move the camera or item a bit to proceed.");
-      return;
-    }
-
-    setBusy(true);
-    busyRef.current = true;
-    try {
-      const video = videoRef.current;
-      const canvas = captureCanvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!video || !ctx) return;
-
-      // Prefer ImageCapture.grabFrame() (sharper than drawing <video>)
-      let bitmap: ImageBitmap | null = null;
-      try {
-        const stream = video.srcObject as MediaStream | null;
-        const track = stream?.getVideoTracks?.()[0];
-        if (track && "ImageCapture" in window) {
-          type ImageCaptureCtor = new (t: MediaStreamTrack) => {
-            grabFrame(): Promise<ImageBitmap>;
-          };
-          const icCtor = (
-            window as unknown as { ImageCapture?: ImageCaptureCtor }
-          ).ImageCapture;
-          if (icCtor) {
-            const ic = new icCtor(track);
-            bitmap = await ic.grabFrame();
-          }
-        }
-      } catch {}
-
-      if (bitmap) {
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        ctx.drawImage(bitmap, 0, 0);
-      } else {
-        // fallback
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      // Quick safety prefilter: skip if a person/pet is present in the frame
-      try {
-        const model = await getCoco();
-        const preDets = (await model.detect(
-          canvas as HTMLCanvasElement
-        )) as Array<{ class: string; score?: number }>;
-        const hasBlocked = preDets.some(
-          (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
-        );
-        if (hasBlocked) {
-          if (!opts?.silent) alert("Please avoid capturing people or pets.");
-          return;
-        }
-      } catch {}
-
-      const ahash = aHashFromImageData(img);
-
-      // Duplicate check (Hamming < 5) per bin
-      const key = `${activeTag.teamId}:${activeTag.binId}`;
-      const entry = recentByBinRef.current.get(key) || {
-        hashes: [],
-        times: [] as number[],
-      };
-      for (const h of entry.hashes) {
-        if (hammingHex(h, ahash) < 5) {
-          if (!opts?.silent)
-            alert("Looks like a duplicate capture—try a different angle.");
-          return;
-        }
-      }
-
-      // Per-bin per-hour cap = 6
-      const now = Date.now();
-      entry.times = entry.times.filter((t) => now - t < 60 * 60 * 1000);
-      if (entry.times.length >= 10) {
-        if (!opts?.silent) alert("Hourly capture limit reached for this bin.");
+      // Resolve tag (demo/test mode auto-fills if needed)
+      const activeTag: BinTag | null = ALLOW_NO_QR
+        ? binTag ?? getDemoTag()
+        : binTag;
+      const token = sessionTokenRef.current;
+      const tokenValid =
+        ALLOW_NO_QR || (!!token && Date.now() < (sessionExpRef.current || 0));
+      if (!activeTag || !tokenValid) {
+        if (!opts?.silent && !ALLOW_NO_QR)
+          alert("Show your BinTag QR to continue.");
         return;
       }
 
-      // --------- Detect + ROI crop, then classify ---------
-      const { roi, detections, primary } = await detectPrimaryROI(canvas);
-      const mobPreds = await classify(roi);
-
-      // Merge labels (detector first + synonyms, then MobileNet, then PAPER hint)
-      const safeDetections = (detections || []).filter(
-        (d: any) =>
-          d && typeof d.class === "string" && !BLOCKED_CLASSES.has(d.class)
-      );
-      const labels = mergeLabels(safeDetections, mobPreds);
-
-      // choose a user-facing label
-      const main =
-        primary && !BLOCKED_CLASSES.has((primary as any).class)
-          ? primary
-          : null;
-      const predictedLabel =
-        (main?.class && main.score > 0.55
-          ? (main as any).class
-          : mobPreds[0]?.className) || "unknown";
-      const confidence =
-        (main?.class && (main as any).score > 0.55
-          ? (main as any).score
-          : mobPreds[0]?.probability) ?? 0.5;
-
-      // Map via API (with fallback inside)
-      const mapped: MapResult = await mapWithApi(
-        labels,
-        entry.hashes.length,
-        motionDeltaRef.current || 0,
-        confidence
-      );
-
-      const material = mapped.material;
-      const { bin: binHeuristic, years, tip: tipHeuristic } = mapped;
-      const risk = Math.max(0, Math.min(1, mapped.risk_score ?? 0));
-      const yearsRounded = Math.max(1, Math.round(years));
-      const pointsHeuristic = Math.max(
-        1,
-        Math.round(yearsRounded * (1 - 0.5 * risk))
-      );
-
-      // --- Send to server recognize endpoint (Bedrock agent) ---
-      let decidedBin = binHeuristic;
-      let decidedTip = tipHeuristic;
-      let decidedPoints = pointsHeuristic;
-      let serverSuccess = false;
-
-      // Only call server if we actually have a valid session token
-      if (token && Date.now() < (sessionExpRef.current || 0)) {
-        try {
-          const blob: Blob = await new Promise((res) =>
-            canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
-          );
-          const fd = new FormData();
-          fd.append("token", token);
-          fd.append("frame", blob, "frame.jpg");
-          const r = await fetch("/api/scan/recognize", {
-            method: "POST",
-            body: fd,
-          });
-
-          if (r.status === 410) {
-            // session expired
-            sessionTokenRef.current = null;
-            sessionExpRef.current = 0;
-            setSessionToken(null);
-            if (!opts?.silent && !ALLOW_NO_QR)
-              alert("Session expired. Please scan your QR again.");
-            return; // do not continue or record scan data
-          } else if (r.ok) {
-            const out = (await r.json()) as {
-              recyclable: boolean;
-              bin: string | null;
-              tip?: string;
-              points?: number;
-              confidence?: number;
-            };
-            if (out.bin) decidedBin = out.bin as any;
-            if (typeof out.points === "number") decidedPoints = out.points;
-            if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
-            serverSuccess = true;
-
-            // Visual feedback
-            if ("vibrate" in navigator) {
-              try {
-                (
-                  navigator as Navigator & {
-                    vibrate?: (pattern: number | number[]) => boolean;
-                  }
-                ).vibrate?.(out.recyclable ? 50 : [50, 50, 50]);
-              } catch {}
-            }
-          }
-        } catch (error) {
-          console.error("Server recognition failed:", error);
-        }
+      // Motion threshold (>= 2%)
+      if ((motionDeltaRef.current || 0) < 0.02) {
+        if (!opts?.silent) alert("Move the camera or item a bit to proceed.");
+        return;
       }
 
-      const uid = await ensureAnonAuth();
-      const decidedBinStr = String(decidedBin);
-      const isRecyclable =
-        decidedBinStr === "recycle" ||
-        decidedBinStr === "recycling" ||
-        decidedBinStr === "compost";
+      setBusy(true);
+      busyRef.current = true;
+      try {
+        const video = videoRef.current;
+        const canvas = captureCanvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!video || !ctx) return;
 
-      await addDoc(collection(db, "scans"), {
-        userId: uid,
-        teamId: activeTag.teamId,
-        binId: activeTag.binId,
-        ts: serverTimestamp(),
-        label: predictedLabel,
-        material,
-        confidence: serverSuccess ? confidence : confidence * 0.8, // Lower confidence for heuristic
-        binSuggested: decidedBin,
-        years: yearsRounded,
-        ahash,
-        points: decidedPoints,
-        llmMode: serverSuccess ? "server" : mapped._mode || "heuristic",
-        llmModel: serverSuccess ? "bedrock-nova" : mapped._model || "",
-        risk_score: risk,
-        recyclable: isRecyclable,
-      });
+        // Prefer ImageCapture.grabFrame() (sharper than drawing <video>)
+        let bitmap: ImageBitmap | null = null;
+        try {
+          const stream = video.srcObject as MediaStream | null;
+          const track = stream?.getVideoTracks?.()[0];
+          if (track && "ImageCapture" in window) {
+            type ImageCaptureCtor = new (t: MediaStreamTrack) => {
+              grabFrame(): Promise<ImageBitmap>;
+            };
+            const icCtor = (
+              window as unknown as { ImageCapture?: ImageCaptureCtor }
+            ).ImageCapture;
+            if (icCtor) {
+              const ic = new icCtor(track);
+              bitmap = await ic.grabFrame();
+            }
+          }
+        } catch {}
 
-      // Update recent trackers
-      entry.hashes.unshift(ahash);
-      if (entry.hashes.length > 20) entry.hashes.pop();
-      entry.times.push(now);
-      recentByBinRef.current.set(key, entry);
+        if (bitmap) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          ctx.drawImage(bitmap, 0, 0);
+        } else {
+          // fallback
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      // Vibration feedback moved to server response section above
+        // Quick safety prefilter: skip if a person/pet is present in the frame
+        try {
+          const model = await getCoco();
+          const preDets = (await model.detect(
+            canvas as HTMLCanvasElement
+          )) as Array<{ class: string; score?: number }>;
+          const hasBlocked = preDets.some(
+            (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
+          );
+          if (hasBlocked) {
+            if (!opts?.silent) alert("Please avoid capturing people or pets.");
+            return;
+          }
+        } catch {}
 
-      setResult({
-        label: predictedLabel,
-        material,
-        bin: decidedBin,
-        years: yearsRounded,
-        points: decidedPoints,
-        ahash,
-        confidence,
-        tip: decidedTip,
-        _mode: mapped._mode,
-        _model: mapped._model,
-        risk_score: risk,
-      });
-    } finally {
-      setBusy(false);
-      busyRef.current = false;
-    }
-  }
+        const ahash = aHashFromImageData(img);
+
+        // Duplicate check (Hamming < 5) per bin
+        const key = `${activeTag.teamId}:${activeTag.binId}`;
+        const entry = recentByBinRef.current.get(key) || {
+          hashes: [],
+          times: [] as number[],
+        };
+        for (const h of entry.hashes) {
+          if (hammingHex(h, ahash) < 5) {
+            if (!opts?.silent)
+              alert("Looks like a duplicate capture—try a different angle.");
+            return;
+          }
+        }
+
+        // Per-bin per-hour cap = 6
+        const now = Date.now();
+        entry.times = entry.times.filter((t) => now - t < 60 * 60 * 1000);
+        if (entry.times.length >= 10) {
+          if (!opts?.silent)
+            alert("Hourly capture limit reached for this bin.");
+          return;
+        }
+
+        // --------- Detect + ROI crop, then classify ---------
+        const { roi, detections, primary } = await detectPrimaryROI(canvas);
+        const mobPreds = await classify(roi);
+
+        // Merge labels (detector first + synonyms, then MobileNet, then PAPER hint)
+        const safeDetections = (detections || []).filter(
+          (d: Detection) =>
+            d && typeof d.class === "string" && !BLOCKED_CLASSES.has(d.class)
+        );
+        const labels = mergeLabels(safeDetections, mobPreds);
+
+        // choose a user-facing label
+        const main =
+          primary && !BLOCKED_CLASSES.has((primary as Detection).class)
+            ? (primary as Detection)
+            : null;
+        const predictedLabel =
+          (main?.class && main.score > 0.55
+            ? (main as Detection).class
+            : mobPreds[0]?.className) || "unknown";
+        const confidence =
+          (main?.class && (main as Detection).score > 0.55
+            ? (main as Detection).score
+            : mobPreds[0]?.probability) ?? 0.5;
+
+        // Map via API (with fallback inside)
+        const mapped: MapResult = await mapWithApi(
+          labels,
+          entry.hashes.length,
+          motionDeltaRef.current || 0,
+          confidence
+        );
+
+        const material = mapped.material;
+        const { bin: binHeuristic, years, tip: tipHeuristic } = mapped;
+        const risk = Math.max(0, Math.min(1, mapped.risk_score ?? 0));
+        const yearsRounded = Math.max(1, Math.round(years));
+        const pointsHeuristic = Math.max(
+          1,
+          Math.round(yearsRounded * (1 - 0.5 * risk))
+        );
+
+        // --- Send to server recognize endpoint (Bedrock agent) ---
+        let decidedBin: string = binHeuristic;
+        let decidedTip = tipHeuristic;
+        let decidedPoints = pointsHeuristic;
+        let serverSuccess = false;
+
+        // Only call server if we actually have a valid session token
+        if (token && Date.now() < (sessionExpRef.current || 0)) {
+          try {
+            const blob: Blob = await new Promise((res) =>
+              canvas.toBlob((b) => res(b!), "image/jpeg", 0.7)
+            );
+            const fd = new FormData();
+            fd.append("token", token);
+            fd.append("frame", blob, "frame.jpg");
+            const r = await fetch("/api/scan/recognize", {
+              method: "POST",
+              body: fd,
+            });
+
+            if (r.status === 410) {
+              // session expired
+              sessionTokenRef.current = null;
+              sessionExpRef.current = 0;
+              setSessionToken(null);
+              if (!opts?.silent && !ALLOW_NO_QR)
+                alert("Session expired. Please scan your QR again.");
+              return; // do not continue or record scan data
+            } else if (r.ok) {
+              const out = (await r.json()) as {
+                recyclable: boolean;
+                bin: string | null;
+                tip?: string;
+                points?: number;
+                confidence?: number;
+              };
+              if (out.bin) decidedBin = out.bin as string;
+              if (typeof out.points === "number") decidedPoints = out.points;
+              if (typeof out.tip === "string" && out.tip) decidedTip = out.tip;
+              serverSuccess = true;
+
+              // Visual feedback
+              if ("vibrate" in navigator) {
+                try {
+                  (
+                    navigator as Navigator & {
+                      vibrate?: (pattern: number | number[]) => boolean;
+                    }
+                  ).vibrate?.(out.recyclable ? 50 : [50, 50, 50]);
+                } catch {}
+              }
+            }
+          } catch (error) {
+            console.error("Server recognition failed:", error);
+          }
+        }
+
+        const uid = await ensureAnonAuth();
+        const decidedBinStr = String(decidedBin);
+        const isRecyclable =
+          decidedBinStr === "recycle" ||
+          decidedBinStr === "recycling" ||
+          decidedBinStr === "compost";
+
+        await addDoc(collection(db, "scans"), {
+          userId: uid,
+          teamId: activeTag.teamId,
+          binId: activeTag.binId,
+          ts: serverTimestamp(),
+          label: predictedLabel,
+          material,
+          confidence: serverSuccess ? confidence : confidence * 0.8, // Lower confidence for heuristic
+          binSuggested: decidedBin,
+          years: yearsRounded,
+          ahash,
+          points: decidedPoints,
+          llmMode: serverSuccess ? "server" : mapped._mode || "heuristic",
+          llmModel: serverSuccess ? "bedrock-nova" : mapped._model || "",
+          risk_score: risk,
+          recyclable: isRecyclable,
+        });
+
+        // Update recent trackers
+        entry.hashes.unshift(ahash);
+        if (entry.hashes.length > 20) entry.hashes.pop();
+        entry.times.push(now);
+        recentByBinRef.current.set(key, entry);
+
+        // Vibration feedback moved to server response section above
+
+        setResult({
+          label: predictedLabel,
+          material,
+          bin: decidedBin,
+          years: yearsRounded,
+          points: decidedPoints,
+          ahash,
+          confidence,
+          tip: decidedTip,
+          _mode: mapped._mode,
+          _model: mapped._model,
+          risk_score: risk,
+        });
+      } finally {
+        setBusy(false);
+        busyRef.current = false;
+      }
+    },
+    [sessionActive, binTag]
+  );
+
+  useEffect(() => {
+    captureFnRef.current = (opts?: { silent?: boolean }) => {
+      void captureAndRecord(opts);
+    };
+  }, [captureAndRecord]);
 
   const captureDisabled = !sessionActive || !!busy || (!ALLOW_NO_QR && !binTag);
 
