@@ -16,6 +16,7 @@ import {
 } from "../lib/vision";
 import type { Detection } from "../lib/vision";
 import { mapWithApi, type MapResult } from "../lib/mapping";
+import { computePoints } from "../lib/points2";
 import {
   BLOCKED_CLASSES,
   DEMO_NO_QR,
@@ -625,15 +626,17 @@ export default function CameraScanner() {
         const { bin: binHeuristic, years, tip: tipHeuristic } = mapped;
         const risk = Math.max(0, Math.min(1, mapped.risk_score ?? 0));
         const yearsRounded = Math.max(1, Math.round(years));
-        const pointsHeuristic = Math.max(
-          1,
-          Math.round(yearsRounded * (1 - 0.5 * risk))
+        const computedPoints = computePoints(
+          material,
+          yearsRounded,
+          risk,
+          (entry.times || []).length
         );
 
         // --- Send to server recognize endpoint (Bedrock agent) ---
         let decidedBin: string = binHeuristic;
         let decidedTip = tipHeuristic;
-        let decidedPoints = pointsHeuristic;
+        let decidedPoints = computedPoints;
         let serverSuccess = false;
 
         // Only call server if we actually have a valid session token

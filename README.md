@@ -37,6 +37,26 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
   Only a perceptual hash & label are stored—**no photos**.
 
 ---
+## Points System
+
+We use a capped, log-scaled impact with material multipliers and small modifiers to keep scores fair and not dominated by extreme “years” values:
+
+- **Material multiplier (harm/priority)**
+  - plastic: 1.3, aluminum: 1.6, e-waste: 2.0, battery: 2.5, glass: 0.8, paper: 0.6, compost: 0.5
+- **Impact from years (diminish extremes)**
+  - `impact = clamp(1, 10, 3 * log10(years + 1))`
+- **Risk incentive (harder ≈ more points)**
+  - `riskAdj = 1 + 0.5 * risk_score`
+- **Anti-farm (soft diminishing returns per bin/day)**
+  - `freqAdj = 1 - 0.1 * min(nToday, 5)`
+- **Final**
+  - `points = round(clamp(1, 100, 5 * impact * materialMult * riskAdj * freqAdj))`
+
+Examples:
+- Plastic bottle (450y, plastic 1.3, risk 0.3, first): ~60 pts
+- Glass bottle (1500y, glass 0.8, risk 0.1, first): ~40 pts
+
+---
 
 ![Landing page](./public/landing.png)
 ![Leaderboard page](./public/leaderboard.png)
@@ -67,7 +87,9 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
    The app shows: bin type (recycling/compost/landfill/special), a quick **tip**, and **years saved**.
 5. **Earn points**
    Your team’s score and leaderboard position update automatically.
-6. **Track impact**
+6. **Spend you Points**
+  Get unique Wallpapers, avatars, perks and discounts from sponsors.   
+7. **Track impact**
    See your history, best days, category totals (organic, plastic, etc.), and achievements.
 
 ---
