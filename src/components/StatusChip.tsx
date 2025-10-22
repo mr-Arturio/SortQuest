@@ -1,19 +1,17 @@
 "use client";
 
-import type { BinTag } from "../lib/scanner-types";
-
 type Props = {
   testMode: boolean;
   demoNoQr: boolean;
   sessionToken: string | null;
-  binTag: BinTag | null;
+  binTagPresent: boolean;
 };
 
 export default function StatusChip({
   testMode,
   demoNoQr,
   sessionToken,
-  binTag,
+  binTagPresent,
 }: Props) {
   const text = testMode
     ? "Test mode: tap Scan"
@@ -21,7 +19,7 @@ export default function StatusChip({
     ? "Demo mode: QR optional"
     : sessionToken
     ? "Session active"
-    : binTag
+    : binTagPresent
     ? "Verifying QR…"
     : "Show your BinTag QR";
 

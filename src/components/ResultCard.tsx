@@ -1,8 +1,22 @@
 "use client";
 
-import type { ScanResult } from "../lib/scanner-types";
+type Result = {
+  label: string;
+  material: string;
+  bin: string;
+  years: number;
+  points: number;
+  ahash: string;
+  confidence: number;
+  tip: string;
+  _mode?: "heuristic" | "server";
+  _model?: string;
+  risk_score?: number;
+};
 
-export default function ResultCard({ result }: { result: ScanResult }) {
+type Props = { result: Result };
+
+export default function ResultCard({ result }: Props) {
   return (
     <div className="card p-4 space-y-2">
       <div className="flex items-center justify-between">

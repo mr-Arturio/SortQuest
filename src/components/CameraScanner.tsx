@@ -25,27 +25,16 @@ import {
   DETECT_WIDTH,
   DETECT_EVERY_MS,
 } from "../lib/scanner-constants";
-import type { BinTag, Box, ScanResult } from "../lib/scanner-types";
+import type {
+  BinTag,
+  VendorTrackCapabilities,
+  VendorTrackConstraintSet,
+  Box,
+} from "../lib/scanner-types";
 import DetectionOutline from "./DetectionOutline";
 import StatusChip from "./StatusChip";
 import UnknownBanner from "./UnknownBanner";
 import ResultCard from "./ResultCard";
-
-// Vendor-extended media types (progressive enhancement)
-type VendorTrackCapabilities = MediaTrackCapabilities & {
-  focusMode?: string[];
-  exposureMode?: string[];
-  whiteBalanceMode?: string[];
-  zoom?: { min: number; max: number; step?: number };
-  pointsOfInterest?: boolean;
-};
-type VendorTrackConstraintSet = MediaTrackConstraintSet & {
-  focusMode?: string;
-  exposureMode?: string;
-  whiteBalanceMode?: string;
-  zoom?: number;
-  pointsOfInterest?: { x: number; y: number }[];
-};
 
 export default function CameraScanner() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -68,7 +57,19 @@ export default function CameraScanner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [binTag, setBinTag] = useState<BinTag | null>(null);
-  const [result, setResult] = useState<ScanResult | null>(null);
+  const [result, setResult] = useState<null | {
+    label: string;
+    material: string;
+    bin: string;
+    years: number;
+    points: number;
+    ahash: string;
+    confidence: number;
+    tip: string;
+    _mode?: "heuristic" | "server";
+    _model?: string;
+    risk_score?: number;
+  }>(null);
 
   // QR + motion tracking
   const lastQRSeenAtRef = useRef<number>(0);
@@ -763,13 +764,7 @@ export default function CameraScanner() {
           <canvas ref={detectCanvasRef} className="hidden" />
 
           {/* GREEN OUTLINE OVERLAY */}
-          {box && viewRef.current && videoRef.current && (
-            <DetectionOutline
-              box={box}
-              viewEl={viewRef.current}
-              videoEl={videoRef.current}
-            />
-          )}
+          <DetectionOutline box={box} viewRef={viewRef} videoRef={videoRef} />
 
           <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/40 to-transparent" />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/40 to-transparent" />
@@ -779,7 +774,7 @@ export default function CameraScanner() {
               testMode={TEST_MODE}
               demoNoQr={DEMO_NO_QR}
               sessionToken={sessionToken}
-              binTag={binTag}
+              binTagPresent={!!binTag}
             />
           </div>
 

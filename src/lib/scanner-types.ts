@@ -1,5 +1,3 @@
-// Shared types for the camera scanner
-
 export type BinTag = { teamId: string; binId: string };
 
 export type Box = {
@@ -11,16 +9,18 @@ export type Box = {
   score?: number;
 } | null;
 
-export type ScanResult = {
-  label: string;
-  material: string;
-  bin: string;
-  years: number;
-  points: number;
-  ahash: string;
-  confidence: number;
-  tip: string;
-  _mode?: "heuristic" | "server";
-  _model?: string;
-  risk_score?: number;
+export type VendorTrackCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[];
+  exposureMode?: string[];
+  whiteBalanceMode?: string[];
+  zoom?: { min: number; max: number; step?: number };
+  pointsOfInterest?: boolean;
+};
+
+export type VendorTrackConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string;
+  exposureMode?: string;
+  whiteBalanceMode?: string;
+  zoom?: number;
+  pointsOfInterest?: { x: number; y: number }[];
 };
