@@ -16,8 +16,20 @@ import {
 } from "../lib/vision";
 import type { Detection } from "../lib/vision";
 import { mapWithApi, type MapResult } from "../lib/mapping";
-
-type BinTag = { teamId: string; binId: string };
+import {
+  BLOCKED_CLASSES,
+  DEMO_NO_QR,
+  TEST_MODE,
+  ALLOW_NO_QR,
+  SCAN_INTERVAL_MS,
+  DETECT_WIDTH,
+  DETECT_EVERY_MS,
+} from "../lib/scanner-constants";
+import type { BinTag, Box, ScanResult } from "../lib/scanner-types";
+import DetectionOutline from "./DetectionOutline";
+import StatusChip from "./StatusChip";
+import UnknownBanner from "./UnknownBanner";
+import ResultCard from "./ResultCard";
 
 // Vendor-extended media types (progressive enhancement)
 type VendorTrackCapabilities = MediaTrackCapabilities & {
@@ -34,29 +46,6 @@ type VendorTrackConstraintSet = MediaTrackConstraintSet & {
   zoom?: number;
   pointsOfInterest?: { x: number; y: number }[];
 };
-
-// Exclude people/pets from detection/UX and capture flow
-const BLOCKED_CLASSES = new Set(["person", "dog", "cat"]);
-
-// DEMO FLAG: when true, QR code is not required
-const DEMO_NO_QR = process.env.NEXT_PUBLIC_DEMO_NO_QR === "1";
-// TEST MODE: manual capture via button; QR is not required
-const TEST_MODE = process.env.NEXT_PUBLIC_TEST_MODE === "1";
-const ALLOW_NO_QR = TEST_MODE || DEMO_NO_QR;
-
-// loop settings
-const SCAN_INTERVAL_MS = 333; // ~3 fps
-const DETECT_WIDTH = 320; // downscale for motion/QR to reduce CPU
-const DETECT_EVERY_MS = 650; // live-outline cadence
-
-type Box = {
-  x: number; // 0..1
-  y: number; // 0..1
-  w: number; // 0..1
-  h: number; // 0..1
-  label?: string;
-  score?: number;
-} | null;
 
 export default function CameraScanner() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -79,19 +68,7 @@ export default function CameraScanner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [binTag, setBinTag] = useState<BinTag | null>(null);
-  const [result, setResult] = useState<null | {
-    label: string;
-    material: string;
-    bin: string;
-    years: number;
-    points: number;
-    ahash: string;
-    confidence: number;
-    tip: string;
-    _mode?: "heuristic" | "server";
-    _model?: string;
-    risk_score?: number;
-  }>(null);
+  const [result, setResult] = useState<ScanResult | null>(null);
 
   // QR + motion tracking
   const lastQRSeenAtRef = useRef<number>(0);
@@ -786,84 +763,24 @@ export default function CameraScanner() {
           <canvas ref={detectCanvasRef} className="hidden" />
 
           {/* GREEN OUTLINE OVERLAY */}
-          {box &&
-            viewRef.current &&
-            videoRef.current &&
-            (() => {
-              const containerW = viewRef.current!.clientWidth;
-              const containerH = viewRef.current!.clientHeight;
-              const vW = videoRef.current!.videoWidth || 640;
-              const vH = videoRef.current!.videoHeight || 480;
-              const videoAR = vW / vH;
-              const containerAR = containerW / containerH;
-
-              let vw: number, vh: number, vx: number, vy: number;
-              if (videoAR > containerAR) {
-                vw = containerW;
-                vh = containerW / videoAR;
-                vx = 0;
-                vy = (containerH - vh) / 2;
-              } else {
-                vh = containerH;
-                vw = containerH * videoAR;
-                vy = 0;
-                vx = (containerW - vw) / 2;
-              }
-
-              const left = vx + box!.x * vw;
-              const top = vy + box!.y * vh;
-              const width = box!.w * vw;
-              const height = box!.h * vh;
-
-              return (
-                <div className="absolute inset-0 pointer-events-none">
-                  <div
-                    className="absolute border-2 rounded-md"
-                    style={{
-                      left,
-                      top,
-                      width,
-                      height,
-                      borderColor: "rgb(16,185,129)",
-                      boxShadow:
-                        "0 0 0 2px rgba(16,185,129,0.45) inset, 0 0 8px rgba(16,185,129,0.35)",
-                    }}
-                  />
-                  {box!.label && (
-                    <div
-                      className="absolute px-2 py-0.5 text-xs font-medium rounded-md"
-                      style={{
-                        left,
-                        top: Math.max(0, top - 22),
-                        background: "rgba(16,185,129,0.9)",
-                        color: "white",
-                      }}
-                    >
-                      {box!.label}
-                      {typeof box!.score === "number"
-                        ? ` · ${(box!.score * 100) | 0}%`
-                        : ""}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+          {box && viewRef.current && videoRef.current && (
+            <DetectionOutline
+              box={box}
+              viewEl={viewRef.current}
+              videoEl={videoRef.current}
+            />
+          )}
 
           <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/40 to-transparent" />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/40 to-transparent" />
 
           <div className="absolute left-2 top-2">
-            <span className="chip bg-white/90 text-neutral-800">
-              {TEST_MODE
-                ? "Test mode: tap Scan"
-                : DEMO_NO_QR
-                ? "Demo mode: QR optional"
-                : sessionToken
-                ? "Session active"
-                : binTag
-                ? "Verifying QR…"
-                : "Show your BinTag QR"}
-            </span>
+            <StatusChip
+              testMode={TEST_MODE}
+              demoNoQr={DEMO_NO_QR}
+              sessionToken={sessionToken}
+              binTag={binTag}
+            />
           </div>
 
           {/* Center reticle */}
@@ -903,68 +820,9 @@ export default function CameraScanner() {
       )}
 
       {/* Unknown material banner */}
-      {result?.material === "unknown" && (
-        <div className="card p-3 bg-amber-50 border-amber-200">
-          <div className="text-sm text-amber-800">
-            Not recyclable/compostable here — please use landfill. (Check tip
-            below.)
-          </div>
-        </div>
-      )}
+      {result?.material === "unknown" && <UnknownBanner />}
 
-      {result && (
-        <div className="card p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-neutral-500">Prediction</div>
-            <div className="flex gap-2">
-              {result._mode === "server" ? (
-                <span className="chip">
-                  AI: {result._model || "Bedrock Nova"}
-                </span>
-              ) : (
-                <span className="chip bg-amber-100 text-amber-700">
-                  Offline rules
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="text-lg font-semibold">
-            {result.label} <span className="text-neutral-400">→</span>{" "}
-            <span className="uppercase font-mono">{result.material}</span>
-          </div>
-
-          <div className="flex flex-wrap gap-2 text-sm">
-            <span className="chip">
-              Bin: <b className="ml-1">{result.bin}</b>
-            </span>
-            <span className="chip">
-              Saved:{" "}
-              <b className="ml-1">
-                {Math.round(result.years).toLocaleString()} yrs
-              </b>
-            </span>
-            <span className="chip">
-              Points: <b className="ml-1">{result.points}</b>
-            </span>
-            {typeof result.risk_score === "number" &&
-              result.risk_score > 0.6 && (
-                <span className="chip bg-amber-100 text-amber-700">
-                  High risk
-                </span>
-              )}
-          </div>
-
-          <p className="text-neutral-600 text-sm">
-            Tip:{" "}
-            {result.tip ??
-              "Rinse/flatten when possible to reduce contamination."}
-          </p>
-          <p className="text-xs text-neutral-500">
-            Privacy: on-device vision; only a perceptual hash + label is stored.
-          </p>
-        </div>
-      )}
+      {result && <ResultCard result={result} />}
     </div>
   );
 }
