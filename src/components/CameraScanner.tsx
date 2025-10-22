@@ -549,19 +549,19 @@ export default function CameraScanner() {
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
         // Quick safety prefilter: skip if a person/pet is present in the frame
-        try {
-          const model = await getCoco();
-          const preDets = (await model.detect(
-            canvas as HTMLCanvasElement
-          )) as Array<{ class: string; score?: number }>;
-          const hasBlocked = preDets.some(
-            (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
-          );
-          if (hasBlocked) {
-            if (!opts?.silent) alert("Please avoid capturing people or pets.");
-            return;
-          }
-        } catch {}
+        // try {
+        //   const model = await getCoco();
+        //   const preDets = (await model.detect(
+        //     canvas as HTMLCanvasElement
+        //   )) as Array<{ class: string; score?: number }>;
+        //   const hasBlocked = preDets.some(
+        //     (d) => d && BLOCKED_CLASSES.has(d.class) && (d.score ?? 0) > 0.5
+        //   );
+        //   if (hasBlocked) {
+        //     if (!opts?.silent) alert("Please avoid capturing people or pets.");
+        //     return;
+        //   }
+        // } catch {}
 
         const ahash = aHashFromImageData(img);
 
