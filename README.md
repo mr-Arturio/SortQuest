@@ -116,9 +116,9 @@ See `ARCHITECTURE.md` for the full Mermaid diagram. Rendered image:
 
   - `userId`, `teamId`, `binId`, `ts`
   - `label` (e.g., “plastic bottle”), `material` (normalized category)
-  - `binSuggested`, `years`, `points`, `confidence`
+  - `binSuggested`, `years`, `points`, `confidence`, `recyclable`
   - `ahash` (perceptual hash for dupe detection)
-  - `llmMode` (`"llm" | "heuristic"`), `llmModel`, `risk_score`
+  - `llmMode` (`server` | `heuristic`), `llmModel`, `risk_score`
 
 > Default queries avoid composite indexes; everything works out of the box.
 
@@ -136,14 +136,14 @@ See `ARCHITECTURE.md` for the full Mermaid diagram. Rendered image:
 ### 1) Clone & Install
 
 ```bash
-git clone https://github.com/yourname/decomp-dash.git
-cd decomp-dash
+git clone https://github.com/mr-Arturio/SortQuest.git
+cd SortQuest
 npm i
 ```
 
 ### 2) Tailwind v3 (pinned)
 
-We intentionally pin Tailwind to v3 to avoid Next 15/v4 PostCSS changes.
+pin Tailwind to v3 to avoid Next 15/v4 PostCSS changes.
 
 ```bash
 npm ls tailwindcss postcss autoprefixer
@@ -248,7 +248,8 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 3. **Scan Items**
 
    - Go to **Scan** → tap **Start 90s Session**.
-   - Hold the **item** and make sure the **BinTag** QR is visible in frame.
+   - Scan the **BinTag** QR - scanning session started
+   - Hold the **item** and it will be scanned automaticaly (in demo mode there is a button to scan items)
    - The app will identify the item, suggest the correct bin, award points, and show “years saved”.
 
 4. **View Leaderboard & History**
@@ -259,6 +260,8 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 5. **Achievements**
 
    - Earn badges for milestones (first scan, 1k/10k/100k/1M years, category awards, streaks).
+
+6. **Store** (coming soon) - where user can exchange point for digital items - wallpapers, avatars, some collaborated promotions possible.
 
 ---
 
@@ -301,17 +304,6 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 - Sorting, gamified.
 - Small scans. Big wins.
 - From trash to triumph.
-
-## Feature naming
-
-- EcoScan™ — camera scan + guidance
-- BinTag™ — team/bin QR code
-- Years Saved — environmental impact metric
-- Power Hour — bonus window for rapid sorting
-- Streak Shield — protects long streaks from one missed day
-- airPlay — anti-cheat signals & risk scoring
-- QuestLog — history, records, category totals
-- League Tables — daily & all-time leaderboards
 
 ## Troubleshooting
 
