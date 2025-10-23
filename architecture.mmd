@@ -1,0 +1,57 @@
+flowchart TB
+  subgraph Client["Web App - Nextjs TS Tailwind"]
+    UI["UI Components\nCameraScanner, ResultCard, etc."]
+    TFJS["TensorFlow.js\nMobileNet + COCO"]
+    jsQR["jsQR"]
+    PWA["PWA + Service Worker"]
+  end
+
+  subgraph Firebase["Firebase"]
+    Auth["Anonymous Auth"]
+    Firestore["Firestore\nscans, teams, bins, users"]
+  end
+
+  subgraph Server["Nextjs API Routes"]
+    MapAPI["api map\nrule mapping"]
+    VerifyQR["api bintag verify\nissue session token"]
+    Recognize["api scan recognize\nserver vision + scoring"]
+    BedrockPing["api bedrock ping"]
+  end
+
+  subgraph AWS["AWS"]
+    Bedrock["Nova Lite Vision"]
+  end
+
+  subgraph Libs["Shared Lib"]
+    Vision["vision.ts\ndetectPrimaryROI, classify, mergeLabels"]
+    Mapping["mapping.ts"]
+    Points["points2.ts\ncomputePoints"]
+    Session["session.ts"]
+    FirebaseLib["firebase.ts"]
+    Hash["ahash.ts / hamming.ts"]
+    Rules["rules.ts / materials.ts"]
+  end
+
+  Camera((Device Camera))
+  BinTag[[BinTag QR]]
+
+  Camera --> UI
+  BinTag --> UI
+  UI <--> TFJS
+  UI <--> jsQR
+  UI -->|scan results| Firestore
+  UI -->|verify QR| VerifyQR
+  VerifyQR --> Auth
+  VerifyQR --> Firestore
+  UI -->|recognize frame+token| Recognize
+  Recognize --> Bedrock
+  Recognize --> Firestore
+
+  UI <--> Vision
+  UI <--> Mapping
+  UI <--> Points
+  UI <--> Hash
+  Server <--> Rules
+  Server <--> Mapping
+  Server <--> Points
+  Server <--> FirebaseLib

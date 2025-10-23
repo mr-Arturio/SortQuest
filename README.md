@@ -1,5 +1,3 @@
-Created for Ottawa 1-day AI Hackathon
-
 # SortQuest♻️
 
 _Gamified recycling with streaks, badges, and leaderboards._
@@ -37,6 +35,7 @@ Recycling behavior is mostly about **habit & motivation**. Fitness apps made dai
   Only a perceptual hash & label are stored—**no photos**.
 
 ---
+
 ## Points System
 
 We use a capped, log-scaled impact with material multipliers and small modifiers to keep scores fair and not dominated by extreme “years” values:
@@ -53,14 +52,15 @@ We use a capped, log-scaled impact with material multipliers and small modifiers
   - `points = round(clamp(1, 100, 5 * impact * materialMult * riskAdj * freqAdj))`
 
 Examples:
+
 - Plastic bottle (450y, plastic 1.3, risk 0.3, first): ~60 pts
 - Glass bottle (1500y, glass 0.8, risk 0.1, first): ~40 pts
 
 ---
 
-![Landing page](./public/landing.png)
-![Leaderboard page](./public/leaderboard.png)
-![Achievements page](./public/achievements.png)
+![Landing page](./public/Dashboard.png)
+![Scan page](./public/Scan.png)
+![Achievements page](./public/Achivements.png)
 
 ## Tech Stack
 
@@ -72,6 +72,14 @@ Examples:
 - **QR**: `jsQR`
 - **AI Recognition**: AWS Bedrock **Nova Lite** for advanced computer vision
 - **PWA**: Installable, mobile-first layout
+
+---
+
+## Architecture Diagram
+
+See `ARCHITECTURE.md` for the full Mermaid diagram. Rendered image:
+
+![Architecture](./public/architecture.svg)
 
 ---
 
@@ -88,7 +96,7 @@ Examples:
 5. **Earn points**
    Your team’s score and leaderboard position update automatically.
 6. **Spend you Points**
-  Get unique Wallpapers, avatars, perks and discounts from sponsors.   
+   Get unique Wallpapers, avatars, perks and discounts from sponsors.
 7. **Track impact**
    See your history, best days, category totals (organic, plastic, etc.), and achievements.
 
@@ -108,9 +116,9 @@ Examples:
 
   - `userId`, `teamId`, `binId`, `ts`
   - `label` (e.g., “plastic bottle”), `material` (normalized category)
-  - `binSuggested`, `years`, `points`, `confidence`
+  - `binSuggested`, `years`, `points`, `confidence`, `recyclable`
   - `ahash` (perceptual hash for dupe detection)
-  - `llmMode` (`"llm" | "heuristic"`), `llmModel`, `risk_score`
+  - `llmMode` (`server` | `heuristic`), `llmModel`, `risk_score`
 
 > Default queries avoid composite indexes; everything works out of the box.
 
@@ -128,14 +136,14 @@ Examples:
 ### 1) Clone & Install
 
 ```bash
-git clone https://github.com/yourname/decomp-dash.git
-cd decomp-dash
+git clone https://github.com/mr-Arturio/SortQuest.git
+cd SortQuest
 npm i
 ```
 
 ### 2) Tailwind v3 (pinned)
 
-We intentionally pin Tailwind to v3 to avoid Next 15/v4 PostCSS changes.
+pin Tailwind to v3 to avoid Next 15/v4 PostCSS changes.
 
 ```bash
 npm ls tailwindcss postcss autoprefixer
@@ -240,7 +248,8 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 3. **Scan Items**
 
    - Go to **Scan** → tap **Start 90s Session**.
-   - Hold the **item** and make sure the **BinTag** QR is visible in frame.
+   - Scan the **BinTag** QR - scanning session started
+   - Hold the **item** and it will be scanned automaticaly (in demo mode there is a button to scan items)
    - The app will identify the item, suggest the correct bin, award points, and show “years saved”.
 
 4. **View Leaderboard & History**
@@ -251,6 +260,8 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 5. **Achievements**
 
    - Earn badges for milestones (first scan, 1k/10k/100k/1M years, category awards, streaks).
+
+6. **Store** (coming soon) - where user can exchange point for digital items - wallpapers, avatars, some collaborated promotions possible.
 
 ---
 
@@ -293,17 +304,6 @@ $r.Content | ConvertFrom-Json | ConvertTo-Json -Depth 5
 - Sorting, gamified.
 - Small scans. Big wins.
 - From trash to triumph.
-
-## Feature naming
-
-- EcoScan™ — camera scan + guidance
-- BinTag™ — team/bin QR code
-- Years Saved — environmental impact metric
-- Power Hour — bonus window for rapid sorting
-- Streak Shield — protects long streaks from one missed day
-- airPlay — anti-cheat signals & risk scoring
-- QuestLog — history, records, category totals
-- League Tables — daily & all-time leaderboards
 
 ## Troubleshooting
 
